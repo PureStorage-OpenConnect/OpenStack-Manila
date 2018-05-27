@@ -5,23 +5,23 @@ Manila driver for Pure Storage FlashBlade
 
 Installation Instructions
 -------------------------
-This driver has been written for the Rocky release but missed the final cutoff date.
+This driver has been based on the OpenStack Rocky release. There are currently no plans to upstream this to the main Manila project. If this is required then please contact your local account teams to request this.
 
 Support for this driver will be on a best-efforts basis and there is no guarantee that driver will work in versions of OpenStack earlier than Rocky.
 
 A prerequisite for installing this driver is that you must have the Manila project already installed in your OpenStack deployment.
 
-In you Manila directory structure you must first create the manila/share/drivers/purestorage directory and then add the Python driver file into this directory.
+In you Manila directory structure you must first create a ``manila/share/drivers/purestorage`` directory and then add the supplied Python driver file into this directory.
 
-You must also modify the manila/opts/py file to understand that the Pure Storage FlashBlade driver is available for use.
+You must also modify the ``manila/opts.py`` file to understand that the Pure Storage FlashBlade driver is available for use by performing the following steps:
 
-Edit the file by adding the following line into the top of the file along with the other ``import`` commands:
+- Edit the file by adding the following line into the top of the file along with the other ``import`` commands:
 
 .. code-block:: console
 
     import manila.share.drivers.purestorage.flashblade
 
-and in the section ``_global_opt_lists`` add the following lines:
+- and in the section ``_global_opt_lists`` add the following lines:
 
 .. code-block:: console
 
@@ -29,7 +29,7 @@ and in the section ``_global_opt_lists`` add the following lines:
     manila.share.drivers.purestorage.flashblade.flashblade_extra_opts,
     manila.share.drivers.purestorage.flashblade.flashblade_connection_opts,
 
-You must now restart the Manila service to enable the Pure Storage FlashBlade driver.
+- Restart the Manila service to enable the Pure Storage FlashBlade driver.
 
 Usage Instructions
 ==================
