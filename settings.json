@@ -1,0 +1,7 @@
+{
+    "id": "OpenStack-Manila",
+    "filter": "devops",
+    "image": "http://code.purestorage.com/images/24_Manila.png",
+    "featured": 1,
+    "priority": 1
+}
