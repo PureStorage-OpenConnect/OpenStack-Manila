@@ -1,6 +1,6 @@
 {
     "id": "OpenStack-Manila",
-    "name": "OpenStack Manila Driver",
+    "name": "FlashBlade OpenStack Manila Driver",
     "filter": "virtualization",
     "image": "http://code.purestorage.com/images/24_Manila.png",
     "featured": 0,
