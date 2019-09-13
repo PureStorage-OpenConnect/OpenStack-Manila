@@ -1,7 +1,8 @@
 {
     "id": "OpenStack-Manila",
-    "filter": "devops",
+    "name": "OpenStack Manila Driver",
+    "filter": "virtualization",
     "image": "http://code.purestorage.com/images/24_Manila.png",
-    "featured": 1,
+    "featured": 0,
     "priority": 1
 }
