@@ -292,7 +292,9 @@ class FlashBladeShareDriver(driver.ShareDriver):
                 provisioned=size,
                 fast_remove_directory_enabled=True,
                 snapshot_directory_enabled=True,
-                nfs=purity_fb.NfsRule(enabled=True, rules=''))
+                nfs=purity_fb.NfsRule(v3_enabled=True,
+                                      v4_1_enabled=True,
+                                      rules=''))
             self._sys.file_systems.create_file_systems(flashblade_fs)
             location = self._get_full_nfs_export_path(share_name)
         elif share['share_proto'] == 'CIFS':
