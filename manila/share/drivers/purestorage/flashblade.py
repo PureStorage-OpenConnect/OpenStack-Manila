@@ -83,13 +83,20 @@ def purity_fb_to_manila_exceptions(func):
 
 class FlashBladeShareDriver(driver.ShareDriver):
 
-    VERSION = '1.0'    # driver version
+    VERSION = '10.0'    # driver version
+    USER_AGENT_BASE = 'OpenStack Manila'
 
     def __init__(self, *args, **kwargs):
         super(FlashBladeShareDriver, self).__init__(False, *args, **kwargs)
         self.configuration.append_config_values(flashblade_connection_opts)
         self.configuration.append_config_values(flashblade_auth_opts)
         self.configuration.append_config_values(flashblade_extra_opts)
+        self._user_agent = '%(base)s %(class)s/%(version)s (%(platform)s)' % {
+            'base': self.USER_AGENT_BASE,
+            'class': self.__class__.__name__,
+            'version': self.VERSION,
+            'platform': platform.platform()
+        }
 
     def do_setup(self, context):
         """Driver initialization"""
@@ -109,6 +116,8 @@ class FlashBladeShareDriver(driver.ShareDriver):
         self._sys.disable_verify_ssl()
         try:
             self._sys.login(self.api)
+            if '1.5' in self._sys.api_version.list_versions().versions:
+                self._sys._api_client.user_agent = self._user_agent
         except purity_fb.rest.ApiException as ex:
             msg = _("Exception when logging into the array: %s\n") % ex
             LOG.exception(msg)
@@ -204,7 +213,7 @@ class FlashBladeShareDriver(driver.ShareDriver):
                 LOG.error(msg)
                 raise exception.ShareResourceNotFound(share_id=name)
             else:
-              return res.items[0]
+                return res.items[0]
         except exception.InvalidShare:
             msg = (_('Filesystem not found on FlashBlade by name: %s') %
                    name)
@@ -269,7 +278,6 @@ class FlashBladeShareDriver(driver.ShareDriver):
                 line = (access['access_to'] +
                         '(' + self._get_flashblade_access_level(access) +
                         ',no_root_squash) ')
-#                line = '{0}({1},no_root_squash) '.format((access['access_to'], self._get_flashblade_access_level(access)))
                 nfs_rules += line
         message = ("rules are %(nfs_rules)s, info "
                    "update nfs access")
@@ -287,20 +295,30 @@ class FlashBladeShareDriver(driver.ShareDriver):
         share_name = self._make_share_name(share)
 
         if share['share_proto'] == 'NFS':
-            flashblade_fs = purity_fb.FileSystem(
-                name=share_name,
-                provisioned=size,
-                fast_remove_directory_enabled=True,
-                snapshot_directory_enabled=True,
-                nfs=purity_fb.NfsRule(v3_enabled=True,
-                                      v4_1_enabled=True,
-                                      rules=''))
+            if '1.6' in self._sys.api_version.list_versions().versions:
+                flashblade_fs = purity_fb.FileSystem(
+                    name=share_name,
+                    provisioned=size,
+                    hard_limit_enabled=True,
+                    fast_remove_directory_enabled=True,
+                    snapshot_directory_enabled=True,
+                    nfs=purity_fb.NfsRule(v3_enabled=True, rules='', v4_1_enabled=True))
+            else:
+                flashblade_fs = purity_fb.FileSystem(
+                    name=share_name,
+                    provisioned=size,
+                    hard_limit_enabled=True,
+                    fast_remove_directory_enabled=True,
+                    snapshot_directory_enabled=True,
+                    nfs=purity_fb.NfsRule(enabled=True,
+                                          rules=''))
             self._sys.file_systems.create_file_systems(flashblade_fs)
             location = self._get_full_nfs_export_path(share_name)
         elif share['share_proto'] == 'CIFS':
             flashblade_fs = purity_fb.FileSystem(
                 name=share_name,
                 provisioned=size,
+                hard_limit_enabled=True,
                 fast_remove_directory_enabled=True,
                 snapshot_directory_enabled=True,
                 smb=purity_fb.ProtocolRule(enabled=True))
@@ -344,7 +362,8 @@ class FlashBladeShareDriver(driver.ShareDriver):
         self._sys.file_systems.update_file_systems(
             name=dataset_name,
             attributes=purity_fb.FileSystem(
-                nfs=purity_fb.NfsRule(enabled=False),
+                nfs=purity_fb.NfsRule(v3_enabled=False,
+                                      v4_1_enabled=False),
                 smb=purity_fb.ProtocolRule(enabled=False),
                 destroyed=True))
         if self.configuration.flashblade_eradicate:
@@ -359,7 +378,7 @@ class FlashBladeShareDriver(driver.ShareDriver):
 #                '\' and suffix=\'' +
 #                snapshot['id'] +
 #                '\'')
-        filt = 'source=\'{0}\' and suffix=\'{1}\''.format(dataset_name,  snapshot['id'])
+        filt = 'source=\'{0}\' and suffix=\'{1}\''.format(dataset_name, snapshot['id'])
 #        name = (dataset_name +
 #                "." +
 #                snapshot['id'])
@@ -380,7 +399,9 @@ class FlashBladeShareDriver(driver.ShareDriver):
                 name=name)
 
     def ensure_share(self, context, share, share_server=None):
-        """Dummy - called to ensure share is exported"""
+        """Dummy - called to ensure share is exported.
+        All shares created on a FlashBlade are guaranteed to
+        be exported so this check is redundant"""
 
     def update_access(self, context, share, access_rules, add_rules,
                       delete_rules, share_server=None):
