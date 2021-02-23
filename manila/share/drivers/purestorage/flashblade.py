@@ -146,6 +146,8 @@ class FlashBladeShareDriver(driver.ShareDriver):
             snapshot_support=True,
             create_share_from_snapshot_support=False,
             mount_snapshot_support=False,
+            manage_existing_support=False,
+            manage_existing_snapshot_support=False,
             revert_to_snapshot_support=False)
 
         super(FlashBladeShareDriver, self)._update_share_stats(data)
@@ -281,7 +283,7 @@ class FlashBladeShareDriver(driver.ShareDriver):
                 nfs_rules += line
         message = ("rules are %(nfs_rules)s, info "
                    "update nfs access")
-        LOG.error(message, {"nfs_rules": nfs_rules})
+        LOG.info(message, {"nfs_rules": nfs_rules})
 
         self._sys.file_systems.update_file_systems(
             name=dataset_name,
@@ -290,7 +292,7 @@ class FlashBladeShareDriver(driver.ShareDriver):
 
     @purity_fb_to_manila_exceptions
     def create_share(self, context, share, share_server=None):
-
+        """Create a share and export it based on protocol used."""
         size = share['size'] * units.Gi
         share_name = self._make_share_name(share)
 
@@ -314,6 +316,8 @@ class FlashBladeShareDriver(driver.ShareDriver):
                                           rules=''))
             self._sys.file_systems.create_file_systems(flashblade_fs)
             location = self._get_full_nfs_export_path(share_name)
+            LOG.info("FlashBlade creating share %(name)s",
+                     {'name': share_name})
         elif share['share_proto'] == 'CIFS':
             flashblade_fs = purity_fb.FileSystem(
                 name=share_name,
@@ -324,6 +328,8 @@ class FlashBladeShareDriver(driver.ShareDriver):
                 smb=purity_fb.ProtocolRule(enabled=True))
             self._sys.file_systems.create_file_systems(flashblade_fs)
             location = self._get_full_cifs_export_path(share_name)
+            LOG.info("FlashBlade creating share %(name)s",
+                     {'name': share_name})
         else:
             message = (_('Unsupported share protocol: %(proto)s.') %
                        {'proto': share['share_proto']})
@@ -367,7 +373,9 @@ class FlashBladeShareDriver(driver.ShareDriver):
                 smb=purity_fb.ProtocolRule(enabled=False),
                 destroyed=True))
         if self.configuration.flashblade_eradicate:
-            self._sys.file_systems.delete_file_systems(dataset_name)
+            LOG.info("FlashBlade eradicating share %(name)s",
+                     {'name': dataset_name})
+            self._sys.file_systems.delete_file_systems(name=dataset_name)
 
     @purity_fb_to_manila_exceptions
     def delete_snapshot(self, context, snapshot, share_server=None):
@@ -378,11 +386,13 @@ class FlashBladeShareDriver(driver.ShareDriver):
 #                '\' and suffix=\'' +
 #                snapshot['id'] +
 #                '\'')
-        filt = 'source=\'{0}\' and suffix=\'{1}\''.format(dataset_name, snapshot['id'])
+        filt = 'source_display_name=\'{0}\' and suffix=\'{1}\''.format(dataset_name, snapshot['id'])
 #        name = (dataset_name +
 #                "." +
 #                snapshot['id'])
-        name = '{0},{1}'.format(dataset_name, snapshot['id'])
+        LOG.info("FlashBlade filter %(name)s",
+                 {'name': filt})
+        name = '{0}.{1}'.format(dataset_name, snapshot['id'])
         try:
             flashblade_snapshot = (
                 self._get_flashblade_snapshot_by_name(filt))
@@ -405,12 +415,14 @@ class FlashBladeShareDriver(driver.ShareDriver):
 
     def update_access(self, context, share, access_rules, add_rules,
                       delete_rules, share_server=None):
+        """Update access of share"""
         # We will use the access_rules list to bulk update access
         if share['share_proto'] == 'NFS':
             self._update_nfs_access(share, access_rules)
         # TODO(SD): add CIFS access stuff when available
 
     def get_network_allocations_number(self):
+        """Not required - return zero"""
         return 0
 
     def extend_share(self, share, new_size, share_server=None):
