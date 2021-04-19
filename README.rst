@@ -5,7 +5,7 @@ Manila driver for Pure Storage FlashBlade
 
 Installation Instructions
 -------------------------
-This driver has been based on the OpenStack Rocky release. There are currently no plans to upstream this to the main Manila project. If this is required then please contact your local account teams to request this.
+This driver has been tested on all release from the Rocky release.
 
 Support for this driver will be on a best-efforts basis and there is no guarantee that driver will work in versions of OpenStack earlier than Rocky.
 
@@ -29,13 +29,13 @@ You must also modify the ``manila/opts.py`` file to understand that the Pure Sto
     manila.share.drivers.purestorage.flashblade.flashblade_extra_opts,
     manila.share.drivers.purestorage.flashblade.flashblade_connection_opts,
 
-- Restart the Manila service to enable the Pure Storage FlashBlade driver.
+- Restart the Manila Share service to enable the Pure Storage FlashBlade driver.
 
 Usage Instructions
 ==================
-================================
+==============================
 Pure Storage FlashBlade driver
-================================
+==============================
 
 The Pure Storage FlashBlade driver provides support for managing filesystem shares
 on the Pure Storage FlashBlade storage systems.
@@ -50,6 +50,8 @@ Supported operations
 - Extend/Shrink a share.
 
 - Create and delete filesystem snapshots.
+
+- Revert to Snapshot.
 
 - Set access rights to shares.
 
@@ -163,6 +165,6 @@ Configuration options specific to this driver:
      - (String) The name (or IP address) for the Pure Storage FlashBlade storage system data port.
    * - ``flashblade_api`` = ``None``
      - (String) API token for an administrative level user account.
-   * - ``flashblade_eradicate`` = ``False``
+   * - ``flashblade_eradicate`` = ``True``
      - (Boolean) Enable or disable filesystem and snapshot eradication on delete.
 
