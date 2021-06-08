@@ -17,10 +17,11 @@ Pure Storage FlashBlade Share Driver
 """
 
 import functools
+import platform
+
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import units
-import platform
 
 from manila.common import constants
 from manila import exception
@@ -40,11 +41,13 @@ flashblade_connection_opts = [
         "flashblade_mgmt_vip",
         help="The name (or IP address) for the Pure Storage "
         "FlashBlade storage system management VIP.",
+        #        required=True,
     ),
     cfg.HostAddressOpt(
         "flashblade_data_vip",
         help="The name (or IP address) for the Pure Storage "
         "FlashBlade storage system data VIP.",
+        #        required=True,
     ),
 ]
 
@@ -53,6 +56,7 @@ flashblade_auth_opts = [
         "flashblade_api",
         help=("API token for an administrative user account"),
         secret=True,
+        #        required=True,
     ),
 ]
 
@@ -126,7 +130,6 @@ class FlashBladeShareDriver(driver.ShareDriver):
         self.data_address = self._safe_get_from_config_or_fail(
             "flashblade_data_vip"
         )
-
         self._sys = purity_fb.PurityFb(self.management_address)
         self._sys.disable_verify_ssl()
         try:
@@ -152,21 +155,27 @@ class FlashBladeShareDriver(driver.ShareDriver):
             data_reduction,
         ) = self._get_available_capacity()
 
+        reserved_share_percentage = self.configuration.safe_get(
+            "reserved_safe_percentage"
+        )
+        if reserved_share_percentage is None:
+            reserved_share_percentage = 0
+
         data = dict(
             share_backend_name=self._backend_name,
             vendor_name="PURE STORAGE",
             driver_version=self.VERSION,
             storage_protocol="NFS_CIFS",
             data_reduction=data_reduction,
+            reserved_percentage=reserved_share_percentage,
             total_capacity_gb=float(physical_capacity_bytes) / units.Gi,
             free_capacity_gb=float(free_capacity_bytes) / units.Gi,
             provisioned_capacity_gb=float(provisioned_cap_bytes) / units.Gi,
             snapshot_support=True,
             create_share_from_snapshot_support=False,
             mount_snapshot_support=False,
-            manage_existing_support=False,
-            manage_existing_snapshot_support=False,
             revert_to_snapshot_support=True,
+            thin_provisioning=True,
         )
 
         super(FlashBladeShareDriver, self)._update_share_stats(data)
@@ -198,7 +207,7 @@ class FlashBladeShareDriver(driver.ShareDriver):
         return config_value
 
     def _make_source_name(self, snapshot):
-        return "share-%s-manila" % snapshot["share_instance_id"]
+        return "share-%s-manila" % snapshot["share_id"]
 
     def _make_share_name(self, manila_share):
         return "share-%s-manila" % manila_share["id"]
@@ -227,37 +236,26 @@ class FlashBladeShareDriver(driver.ShareDriver):
 
     @purity_fb_to_manila_exceptions
     def _get_flashblade_filesystem_by_name(self, name):
-        try:
-            filesys = []
-            filesys.append(name)
-            res = self._sys.file_systems.list_file_systems(names=filesys)
-            if not res.items[0]:
-                msg = (
-                    _("Filesystem not found on FlashBlade by name: %s") % name
-                )
-                LOG.error(msg)
-                raise exception.ShareResourceNotFound(share_id=name)
-            else:
-                return res.items[0]
-        except exception.InvalidShare:
+        filesys = []
+        filesys.append(name)
+        res = self._sys.file_systems.list_file_systems(names=filesys)
+        if not res.items[0]:
             msg = _("Filesystem not found on FlashBlade by name: %s") % name
             LOG.error(msg)
             raise exception.ShareResourceNotFound(share_id=name)
-        return None
+        return res.items[0]
 
     def _get_flashblade_filesystem(self, manila_share):
         filesystem_name = self._make_share_name(manila_share)
         return self._get_flashblade_filesystem_by_name(filesystem_name)
 
     def _get_flashblade_snapshot_by_name(self, name):
-        try:
-            resu = self._sys.file_system_snapshots.list_file_system_snapshots(
-                filter=name
-            )
-        except exception.InvalidShare:
+        resu = self._sys.file_system_snapshots.list_file_system_snapshots(
+            filter=name
+        )
+        if not resu.items:
             msg = (
-                _("Snapshot not found on the FlashBlade by its name: %s")
-                % name
+                _("Snapshot not found on the FlashBlade by filter: %s") % name
             )
             LOG.error(msg)
             raise exception.ShareSnapshotNotFound(snapshot_id=name)
@@ -271,6 +269,7 @@ class FlashBladeShareDriver(driver.ShareDriver):
                 flashblade_export.get_export_path()
             ),
             "is_admin_only": False,
+            "preferred": True,
             "metadata": {},
         }
 
@@ -285,7 +284,7 @@ class FlashBladeShareDriver(driver.ShareDriver):
                 "extend"
             )
             LOG.warning(message, {"dataset_name": dataset_name})
-            return
+            raise exception.ShareResourceNotFound(share_id=dataset_name)
         attr = {}
         attr["provisioned"] = new_size * units.Gi
         n_attr = purity_fb.FileSystem(**attr)
@@ -293,35 +292,6 @@ class FlashBladeShareDriver(driver.ShareDriver):
         self._sys.file_systems.update_file_systems(
             name=dataset_name, attributes=n_attr
         )
-
-    @purity_fb_to_manila_exceptions
-    def _get_share_backend_id(self, share):
-        """Get backend share id.
-
-        Try to get backend share id from path in case this is managed share,
-        use share['id'] when path is empty.
-        """
-
-        backend_share_id = None
-        try:
-            export_locations = share["export_locations"][0]
-            path = export_locations["path"]
-            if share["share_proto"].lower() == "nfs":
-                # 10.0.0.1:/example_share_name
-                backend_share_id = path.split(":/")[-1]
-            if share["share_proto"].lower() == "cifs":
-                # \\10.0.0.1\example_share_name
-                backend_share_id = path.split("\\")[-1]
-        except Exception as e:
-            LOG.warning(
-                "Cannot get share name from path, make sure the path "
-                "is right. Error details: %s",
-                e,
-            )
-        if backend_share_id and (backend_share_id != share["id"]):
-            return backend_share_id
-        else:
-            return share["id"]
 
     @purity_fb_to_manila_exceptions
     def _update_nfs_access(self, share, access_rules):
@@ -334,8 +304,11 @@ class FlashBladeShareDriver(driver.ShareDriver):
                 "update nfs access"
             )
             LOG.warning(message, {"dataset_name": dataset_name})
-            return
+            raise exception.ShareResourceNotFound(share_id=dataset_name)
         nfs_rules = ""
+        rule_state = {}
+        for access in access_rules:
+            rule_state[access["access_id"]] = {"state": "error"}
         for access in access_rules:
             if access["access_type"] == "ip":
                 line = (
@@ -345,15 +318,34 @@ class FlashBladeShareDriver(driver.ShareDriver):
                     + ",no_root_squash) "
                 )
                 nfs_rules += line
-        message = "rules are %(nfs_rules)s, info " "update nfs access"
-        LOG.info(message, {"nfs_rules": nfs_rules})
-
-        self._sys.file_systems.update_file_systems(
-            name=dataset_name,
-            attributes=purity_fb.FileSystem(
-                nfs=purity_fb.NfsRule(rules=nfs_rules)
-            ),
-        )
+            else:
+                message = _(
+                    'Only "ip" access type is allowed for NFS protocol.'
+                )
+                LOG.error(message)
+                raise exception.InvalidShareAccess(reason=message)
+        try:
+            self._sys.file_systems.update_file_systems(
+                name=dataset_name,
+                attributes=purity_fb.FileSystem(
+                    nfs=purity_fb.NfsRule(rules=nfs_rules)
+                ),
+            )
+            message = "Set nfs rules %(nfs_rules)s for %(share_name)s"
+            LOG.debug(
+                message, {"nfs_rules": nfs_rules, "share_name": dataset_name}
+            )
+        except Exception:
+            message = (
+                "Failed to eet nfs rules %(nfs_rules)s for %(share_name)s"
+            )
+            LOG.debug(
+                message, {"nfs_rules": nfs_rules, "share_name": dataset_name}
+            )
+            return rule_state
+        for access in access_rules:
+            rule_state[access["access_id"]] = {"state": "active"}
+        return rule_state
 
     @purity_fb_to_manila_exceptions
     def create_share(self, context, share, share_server=None):
@@ -384,9 +376,6 @@ class FlashBladeShareDriver(driver.ShareDriver):
                 )
             self._sys.file_systems.create_file_systems(flashblade_fs)
             location = self._get_full_nfs_export_path(share_name)
-            LOG.info(
-                "FlashBlade creating share %(name)s", {"name": share_name}
-            )
         elif share["share_proto"] == "CIFS":
             flashblade_fs = purity_fb.FileSystem(
                 name=share_name,
@@ -398,15 +387,13 @@ class FlashBladeShareDriver(driver.ShareDriver):
             )
             self._sys.file_systems.create_file_systems(flashblade_fs)
             location = self._get_full_cifs_export_path(share_name)
-            LOG.info(
-                "FlashBlade creating share %(name)s", {"name": share_name}
-            )
         else:
             message = _("Unsupported share protocol: %(proto)s.") % {
                 "proto": share["share_proto"]
             }
             LOG.error(message)
             raise exception.InvalidShare(reason=message)
+        LOG.info("FlashBlade created share %(name)s", {"name": share_name})
 
         return location
 
@@ -450,10 +437,10 @@ class FlashBladeShareDriver(driver.ShareDriver):
             ),
         )
         if self.configuration.flashblade_eradicate:
-            LOG.info(
-                "FlashBlade eradicating share %(name)s", {"name": dataset_name}
-            )
             self._sys.file_systems.delete_file_systems(name=dataset_name)
+            LOG.info(
+                "FlashBlade eradicated share %(name)s", {"name": dataset_name}
+            )
 
     @purity_fb_to_manila_exceptions
     def delete_snapshot(self, context, snapshot, share_server=None):
@@ -499,12 +486,9 @@ class FlashBladeShareDriver(driver.ShareDriver):
         """Update access of share"""
         # We will use the access_rules list to bulk update access
         if share["share_proto"] == "NFS":
-            self._update_nfs_access(share, access_rules)
+            state_map = self._update_nfs_access(share, access_rules)
+            return state_map
         # TODO(SD): add CIFS access stuff when available
-
-    def get_network_allocations_number(self):
-        """Not required - return zero"""
-        return 0
 
     def extend_share(self, share, new_size, share_server=None):
         """uses resize_share to extend a share"""
@@ -531,7 +515,7 @@ class FlashBladeShareDriver(driver.ShareDriver):
         name = "{0}.{1}".format(dataset_name, snapshot["id"])
         try:
             flashblade_snapshot = self._get_flashblade_snapshot_by_name(filt)
-        except exception.ShareResourceNotFound:
+        except exception.ShareSnapshotNotFound:
             message = (
                 "snapshot %(snapshot)s not found on FlashBlade, skip " "revert"
             )
