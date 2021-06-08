@@ -7,6 +7,8 @@ Installation Instructions
 -------------------------
 This driver has been tested on all release from the Rocky release.
 
+The code presented here mirrors the code `submitted <https://review.opendev.org/c/openstack/manila/+/789384>`_ to Manila for the Xena release.
+
 Support for this driver will be on a best-efforts basis and there is no guarantee that driver will work in versions of OpenStack earlier than Rocky.
 
 A prerequisite for installing this driver is that you must have the Manila project already installed in your OpenStack deployment.
