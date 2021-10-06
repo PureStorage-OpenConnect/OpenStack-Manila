@@ -1,13 +1,14 @@
 ##############
 UPSTREAM ALERT
 ##############
-The Manila driver has been accepted into upstream OpenStack Xena (est. Oct 4-8 2021)
+The Manila driver has been accepted into upstream OpenStack Xena (now released)
 
-After the release of OpenStack Xena we recommend that, where possible, you use the upstream
-version of the driver rather than this repo version.
+We recommend that, where possible, you use the upstream version of the driver rather than this repo version.
 
 Whilst this repo version is essentially the same, all bugfixes and feature adds will only 
 happen in the upstream OpenStack codebase.
+
+If you need to backport the upstream driver to previous versions use the upstream driver code and the instructions in this repo.
 
 ################
 OpenStack-Manila
